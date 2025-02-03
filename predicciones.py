@@ -48,7 +48,7 @@ modelo = RandomForestRegressor(n_estimators=200, max_depth=10, random_state=42)
 modelo.fit(X_train_scaled, y_train)
 
 # Predicción para los próximos meses hasta el rango deseado (hasta 10 años = 120 meses)
-rango_meses = 16  # Cambiar según la necesidad
+rango_meses = 120  # Cambiar según la necesidad
 dias_futuros = np.arange(df["meses"].max() + 1, df["meses"].max() + 1 + rango_meses).reshape(-1, 1)
 dias_futuros_scaled = scaler.transform(dias_futuros)
 predicciones = modelo.predict(dias_futuros_scaled)
