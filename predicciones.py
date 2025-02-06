@@ -2,69 +2,84 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from datetime import datetime, timedelta
+from datetime import datetime
 
-# Cargar datos desde un archivo Excel
-archivo = "predicciones.xlsx"
-df = pd.read_excel(archivo)
+# Cargar datos
+file_path = "predicciones.xlsx"
+df = pd.read_excel(file_path)
 
-# Normalizar nombres de columnas
-df.columns = df.columns.str.strip().str.lower()
+# Limpieza de nombres de columnas
+df.columns = df.columns.str.strip()
 
-# Verificar si la columna "precio_kwh" existe
-if "precio_kwh" not in df.columns:
-    raise KeyError("La columna 'precio_kwh' no se encuentra en el archivo. Verifica el nombre de la columna en el Excel.")
+# Verificar que las columnas requeridas existan
+required_columns = {'fecha', 'precio_kwh'}
+missing_columns = required_columns - set(df.columns)
+if missing_columns:
+    print(f"Error: Faltan las siguientes columnas en el archivo: {missing_columns}")
+    exit()
 
-# Convertir la columna fecha a tipo datetime
-df["fecha"] = pd.to_datetime(df["fecha"], dayfirst=True, errors='coerce')
+# Convertir fechas a formato datetime
+df['fecha'] = pd.to_datetime(df['fecha'], format='%d/%m/%Y')
 
-# Verificar si hay fechas nulas
-if df["fecha"].isnull().any():
-    raise ValueError("Se encontraron valores no válidos en la columna 'fecha'. Verifica el formato en el Excel.")
+# Convertir fechas a números ordinales
+df['fecha_ordinal'] = df['fecha'].map(datetime.toordinal)
 
-# Extraer año y mes como variables
-fecha_inicial = df["fecha"].min()
-df["anio_mes"] = df["fecha"].dt.to_period("M").astype(str)
-df = df.groupby("anio_mes")["precio_kwh"].mean().reset_index()
-df["anio_mes"] = pd.to_datetime(df["anio_mes"])
-df["meses"] = (df["anio_mes"] - fecha_inicial).dt.days // 30  # Convertir fechas a meses desde inicio
+# Definir IPC estimado según los años futuros
+ipc_futuro = {
+    2026: 5.23,
+    2027: 6.43,
+    2028: 4.57,
+    2029: 8.40
+}
 
-# Variables de entrenamiento
-X = df[["meses"]]
-y = df["precio_kwh"]
+# Calcular IPC promedio si el año no está en el diccionario
+ipc_promedio = np.mean(list(ipc_futuro.values()))
 
-# Dividir datos en entrenamiento y prueba
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# Entrenar modelo Random Forest
+X = df[['fecha_ordinal']]
+y = df['precio_kwh']
 
-# Escalar los datos
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
+modelo = RandomForestRegressor(n_estimators=100, random_state=42)
+modelo.fit(X, y)
 
-# Crear y entrenar el modelo Random Forest
-modelo = RandomForestRegressor(n_estimators=200, max_depth=10, random_state=42)
-modelo.fit(X_train_scaled, y_train)
+# Función para calcular inflación acumulada
+def calcular_inflacion_acumulada(anio_inicio, anio_fin):
+    """Calcula el factor de inflación acumulado desde anio_inicio hasta anio_fin."""
+    factor = 1.0
+    for anio in range(anio_inicio, anio_fin + 1):
+        ipc = ipc_futuro.get(anio, ipc_promedio)  # Si no hay dato, usa IPC promedio
+        factor *= (1 + ipc / 100)
+    return factor
 
-# Predicción para los próximos meses hasta el rango deseado (hasta 10 años = 120 meses)
-rango_meses = 120  # Cambiar según la necesidad
-dias_futuros = np.arange(df["meses"].max() + 1, df["meses"].max() + 1 + rango_meses).reshape(-1, 1)
-dias_futuros_scaled = scaler.transform(dias_futuros)
-predicciones = modelo.predict(dias_futuros_scaled)
+# Función para predecir el precio con inflación acumulada
+def predecir_precio(fecha_str):
+    fecha_pred = datetime.strptime(fecha_str, '%Y-%m-%d')
+    fecha_ordinal_pred = fecha_pred.toordinal()
+    
+    precio_base = modelo.predict([[fecha_ordinal_pred]])[0]
+    
+    # Ajustar por inflación acumulada desde el último año de datos hasta la fecha predicha
+    anio_inicio = df['fecha'].dt.year.max()  # Último año con datos reales
+    anio_pred = fecha_pred.year
+    factor_inflacion = calcular_inflacion_acumulada(anio_inicio, anio_pred)
+    
+    precio_ajustado = precio_base * factor_inflacion
 
-# Crear un DataFrame con las predicciones
-fechas_predichas = [fecha_inicial + pd.DateOffset(months=int(i)) for i in dias_futuros.flatten()]
-df_predicciones = pd.DataFrame({"fecha": fechas_predichas, "precio_kwh": predicciones})
+    return precio_ajustado, precio_base, factor_inflacion
+
+# Pedir fecha al usuario
+fecha_usuario = input("Ingrese la fecha (YYYY-MM-DD) para predecir el precio: ")
+precio_ajustado, precio_base, factor_inflacion = predecir_precio(fecha_usuario)
+
+print(f"Precio estimado sin inflación: {precio_base:.4f}")
+print(f"Factor de inflación acumulado: {factor_inflacion:.4f}")
+print(f"Precio ajustado con inflación acumulada: {precio_ajustado:.4f}")
 
 # Graficar resultados
-plt.figure(figsize=(12, 6))
-plt.scatter(df["anio_mes"], df["precio_kwh"], label="Datos reales", color='blue', alpha=0.6)
-plt.plot(df_predicciones["fecha"], df_predicciones["precio_kwh"], label="Predicción", color='red', linewidth=2, marker='o')
-plt.xlabel("Fecha")
-plt.ylabel("Precio kWh")
-plt.title("Predicción del precio del kWh en Barranquilla por meses")
+plt.scatter(df['fecha'], df['precio_kwh'], color='blue', label='Datos Reales')
+plt.scatter(datetime.strptime(fecha_usuario, '%Y-%m-%d'), precio_ajustado, color='red', label='Predicción Ajustada')
+plt.xlabel('Fecha')
+plt.ylabel('Precio kWh')
 plt.legend()
-plt.grid(True, linestyle='--', alpha=0.5)
 plt.xticks(rotation=45)
 plt.show()
