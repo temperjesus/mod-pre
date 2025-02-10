@@ -4,46 +4,54 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-# 1. Leer el archivo Excel (asegúrate de que esté en la misma carpeta que tu script)
+# 1. Leer el archivo Excel
 data = pd.read_excel('datos_kwh_costa_caribe.xlsx')  # o usa .read_csv si es CSV
-#data = pd.read_csv('datos_kwh_costa_caribe.csv')
-# Asegúrate de que no haya valores faltantes; si los hay, debes decidir cómo manejarlos
-data = data.dropna()
+print(f"Número de filas en el DataFrame después de la lectura: {len(data)}")
+print(data.head())
 
-# 2. Crear variables lagged (retardadas) para 'Precio_kWh'
+# 2. Convertir la columna 'Fecha' a datetime si es necesario
+if 'Fecha' in data.columns:
+    data['Fecha'] = pd.to_datetime(data['Fecha'])
+
+# 3. Imputar valores NaN con la media (antes de crear los lags)
+data = data.fillna(data.mean())
+print(f"Número de filas después de imputar NaN: {len(data)}")
+
+# 4. Crear variables lagged (retardadas) para 'Precio_kWh'
 for i in range(1, 13):
     data[f'Precio_kWh_lag{i}'] = data['Precio_kWh'].shift(i)
 
-# Eliminar filas con valores NaN después de crear los lags
+# 5. Eliminar filas con valores NaN después de crear los lags
 data = data.dropna()
+print(f"Número de filas después de crear los lags y eliminar NaN: {len(data)}")
 
-# 3. Preparar los datos para el modelo
-# Eliminar la columna 'Fecha' si está presente, ya que no es numérica y no se usa directamente
+# 6. Preparar los datos para el modelo
+# Eliminar la columna 'Fecha' si está presente
 if 'Fecha' in data.columns:
     data = data.drop('Fecha', axis=1)
 
-# X: variables predictoras (todos los lags y otras variables)
+# X: variables predictoras
 X = data.drop('Precio_kWh', axis=1)
-# y: variable objetivo (el precio actual)
+# y: variable objetivo
 y = data['Precio_kWh']
 
-# 4. Dividir los datos en conjuntos de entrenamiento y prueba
+# 7. Dividir los datos en conjuntos de entrenamiento y prueba
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# 5. Inicializar y entrenar el modelo Random Forest
-model = RandomForestRegressor(n_estimators=100, random_state=42)  # Puedes ajustar los hiperparámetros
+# 8. Inicializar y entrenar el modelo Random Forest
+model = RandomForestRegressor(n_estimators=100, random_state=42)
 model.fit(X_train, y_train)
 
-# 6. Realizar predicciones en el conjunto de prueba
+# 9. Realizar predicciones en el conjunto de prueba
 y_pred = model.predict(X_test)
 
-# 7. Evaluar el modelo
+# 10. Evaluar el modelo
 mae = mean_absolute_error(y_test, y_pred)
 mse = mean_squared_error(y_test, y_pred)
 print(f'MAE: {mae}')
 print(f'MSE: {mse}')
 
-# 8. Visualizar las predicciones vs los valores reales
+# 11. Visualizar las predicciones vs los valores reales
 plt.figure(figsize=(12, 6))
 plt.plot(y_test.index, y_test, label='Valores Reales', marker='o')
 plt.plot(y_test.index, y_pred, label='Predicciones', marker='x')
@@ -54,11 +62,7 @@ plt.legend()
 plt.grid(True)
 plt.show()
 
-# 9. Predicción para el futuro (ejemplo: un mes adelante)
-# **IMPORTANTE**: Debes obtener los valores reales de Precip, Temp, Gen_Solar, Gen_Eolica y Demanda para el mes siguiente
-# **IMPORTANTE**: Los lags deben calcularse usando los últimos 12 meses *conocidos*.
-# Por ejemplo, si estás prediciendo para enero 2024, necesitas los datos desde enero 2023 hasta diciembre 2023.
-
+# 12. Predicción para el futuro (ejemplo: un mes adelante)
 # Supongamos que tenemos los valores para el mes siguiente
 new_data = pd.DataFrame({
     'Precip': [160.0],      # Ejemplo
@@ -75,4 +79,3 @@ for i in range(1, 13):
 # Realizar la predicción
 predicted_price = model.predict(new_data)
 print(f"Predicción del precio del kWh para el próximo mes: {predicted_price[0]}")
-s
